@@ -29,3 +29,10 @@ class CandidateInput(BaseModel):
 class ExperimentInput(BaseModel):
  name:str=Field(min_length=2,max_length=120)
  candidate_id:int
+class CredentialRotateInput(BaseModel):
+ database_url:str=Field(min_length=10,max_length=500)
+ @model_validator(mode='after')
+ def mysql_only(self):
+  if not self.database_url.startswith('mysql+pymysql://'):
+   raise ValueError('仅支持 mysql+pymysql 连接串')
+  return self

@@ -1,7 +1,7 @@
 """Controlled MySQL index trial. All dynamic identifiers are server-whitelisted."""
 import hashlib,json,time,statistics
 from sqlalchemy import text
-from src.config.database import engine
+from src.config.database import engine as default_engine
 from src.constants.enums import COLUMNS
 def prefix_score(columns,w):
  equality={'sensor_id'}|({'device_type'} if w.get('device_type') else set())
@@ -20,7 +20,8 @@ def _write_probe(conn):
  t=time.perf_counter()
  conn.execute(text("INSERT INTO telemetry(sensor_id,recorded_at,device_type,value) VALUES (999,'2026-11-17T12:00:00','pump',42.5)"),[{} for _ in range(20)])
  elapsed=(time.perf_counter()-t)*1000;conn.rollback();return round(elapsed,4)
-def run(snapshot):
+def run(snapshot,engine=None):
+ engine=engine or default_engine
  w=snapshot['workload'];columns=snapshot['candidate']['columns']
  if not columns or any(c not in COLUMNS for c in columns) or len(set(columns))!=len(columns):raise ValueError('invalid index columns')
  params={'sensor':w['sensor_id'],'start':w['start_at'],'end':w['end_at']}

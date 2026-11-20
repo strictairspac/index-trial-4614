@@ -47,4 +47,11 @@ Python3.11 / FastAPI / SQLAlchemy / PyMySQL / Redis；MySQL8.0；原生 HTML CSS
 
 环境变量 `.env.example`：COMPOSE_PROJECT_NAME、FRONTEND_PORT、BACKEND_PORT、DB_PORT、JWT_SECRET、SEED_DEMO。容器内 DATABASE_URL/REDIS_URL 来自 Compose。SEED_DEMO启动失败仅记录日志；正常启动一次自然键补缺。全局错误处理/请求追踪中间件、JWT授权与业务审计横切。
 
+## 数据库账号轮换（不打断在跑试验）
+管理员通过 `POST /credentials/rotate` 提交新账号的 `mysql+pymysql://` 连接串：后端先用新账号真实连库验权（`SELECT 1` + 探测 `telemetry` 表权限），验权不过返回 400 且旧账号原样保留；通过才把生效账号切到新一代。`GET /credentials/status` 查看脱敏状态（密码固定渲染为 `***`，审计日志同样脱敏，绝不回显明文），`POST /credentials/retire` 在旧账号可撤时回收。
+
+两代账号模型：切换后并发的新请求与新试验走新账号（active 世代）；切换瞬间仍在跑的试验在开工时钉住旧世代，全程沿用旧账号连接，先清理 `trial_candidate` 索引再保存成绩，不受轮换影响。每个 worker 试验在 Redis 名册 `credential:runs:<世代>` 登记；各进程把分世代的借出连接数心跳到 `credential:conns:<实例>`（90 秒 TTL 兜底僵尸进程）。只有「旧世代在跑名册为空 **且** 全部存活进程的旧账号连接归零」才报告 `previous_revocable=true`，随后自动或手动 dispose 旧引擎，此时数据库侧才可真正撤销旧账号；条件不满足时退役返回 409 并保留旧账号。
+
+轮换状态（含连接串）持久化在 Redis `credential:state`：服务中断/重启后 API 与 worker 都从 Redis 恢复已生效账号继续工作，环境变量里的初始 `DATABASE_URL` 仅在首次启动（无状态键）时使用，并在启动时对账终态试验、回收过期世代引擎。因此 Redis 与环境变量、数据库密码同属敏感面，部署须限制访问并按需启用 ACL/网络隔离；连接串经 `mysql+pymysql://` 白名单与可解析性校验，不接受任意 SQL 或远端库。
+
 本地开发：`pip install -r backend/requirements.txt`，设置 DATABASE_URL、REDIS_URL、JWT_SECRET 后在 backend 运行 `uvicorn src.main:app --reload`；前端需 nginx `/api/` 反向代理或开发代理，直接file://不能运行。许可 MIT。
